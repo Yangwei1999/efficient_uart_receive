@@ -73,3 +73,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 }
 
 ```
+
+## 添加parser 解析器
+解析 AA 55 LEN DATA CRC 校验
+
+1. 处理多个场景
