@@ -48,13 +48,15 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
         Core/BSP/Retangle/retarget.c
         Core/BSP/RING/ringbuff.c
+        Core/BSP/NandSPIFLASH/nand_base.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
         Core/BSP/Retangle/
-        Core/BSP/RING
+        Core/BSP/RING/
+        Core/BSP/NandSPIFLASH/
 )
 
 # Add project symbols (macros)

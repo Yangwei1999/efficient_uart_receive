@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
+#include "spi.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -26,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "retarget.h"
 #include "ringbuff.h"
+#include "nand_base.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,156 +76,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
   }
 }
 
-#define MAX_DATA_LEN 64
-
-typedef enum
-{
-  WAIT_HEADER1,
-  WAIT_HEADER2,
-  WAIT_LEN,
-  WAIT_DATA,
-  WAIT_CRC
-
-}parser_state_t;
-
-typedef struct
-{
-  parser_state_t state;
-
-  uint8_t len;
-
-  uint8_t data[MAX_DATA_LEN];
-
-  uint8_t data_pos;
-
-  uint8_t crc;
-
-}parser_t;
-
-void parser_init(parser_t *p)
-{
-  p->state = WAIT_HEADER1;
-
-  p->len = 0;
-
-  p->data_pos = 0;
-
-  p->crc = 0;
-}
-
-uint8_t calc_crc(uint8_t len,
-                 uint8_t *data)
-{
-  uint8_t crc = 0;
-
-  crc += 0xAA;
-  crc += 0x55;
-  crc += len;
-
-  for(uint8_t i = 0; i < len; i++)
-  {
-    crc += data[i];
-  }
-
-  return crc;
-}
-
-void packet_ok(parser_t *p)
-{
-  printf("recv packet: ");
-
-  for(int i = 0; i < p->len; i++)
-  {
-    printf("%02X ", p->data[i]);
-  }
-
-  printf("\n");
-}
-
-void packet_error(void)
-{
-  printf("crc error\n");
-}
-
-void parser_input(parser_t *p,
-                  uint8_t ch)
-{
-  switch(p->state)
-  {
-    case WAIT_HEADER1:
-
-      if(ch == 0xAA)
-      {
-        p->state = WAIT_HEADER2;
-      }
-
-      break;
-
-    case WAIT_HEADER2:
-
-      if(ch == 0x55)
-      {
-        p->state = WAIT_LEN;
-      }
-      else
-      {
-        p->state = WAIT_HEADER1;
-      }
-
-      break;
-
-    case WAIT_LEN:
-
-      if(ch > MAX_DATA_LEN)
-      {
-        parser_init(p);
-      }
-      else
-      {
-        p->len = ch;
-
-        p->data_pos = 0;
-
-        p->state = WAIT_DATA;
-      }
-
-      break;
-
-    case WAIT_DATA:
-
-      p->data[p->data_pos++] = ch;
-
-      if(p->data_pos >= p->len)
-      {
-        p->state = WAIT_CRC;
-      }
-
-      break;
-
-    case WAIT_CRC:
-    {
-      uint8_t crc;
-
-      crc = calc_crc(
-              p->len,
-              p->data);
-
-      if(crc == ch)
-      {
-        packet_ok(p);
-      }
-      else
-      {
-        packet_error();
-      }
-
-      parser_init(p);
-
-      break;
-    }
-  }
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -257,30 +109,67 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART1_UART_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 
   RetargetInit(&huart1);
 
   HAL_UARTEx_ReceiveToIdle_DMA(&huart1, dma_buffer, sizeof(dma_buffer));
   // __HAL_DMA_DISABLE_IT(huart1.hdmarx, DMA_IT_HT);
-  char buff[100];
-  char bytschar;
-  parser_t parser;
+  // char buff[100];
+  // char bytschar;
+  // printf("asd\r\n");
+  nand_spi_base_t nand_base = {
+    .cs_pin =  FLASH_CS_Pin,
+    .cs_port = FLASH_CS_GPIO_Port,
+    .name = "flash1",
+    .hspi =  &hspi2,
+  };
 
-  parser_init(&parser);
+  if (NAND_FLASH_Init(&nand_base) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  NAND_FLASH_ReadID(&nand_base);
+
+  printf("start erase block 0, watch BUSY bit\r\n");
+  if (NAND_FLASH_BeginEraseBlockByIndex(&nand_base, 0U) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  uint8_t status3 = 0U;
+  do
+  {
+    if (NAND_FLASH_ReadStatusRegister(&nand_base, NAND_FLASH_STATUS_REG3_ADDR, &status3) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    printf("tick=%lu status3=0x%02X BUSY=%u WEL=%u EFAIL=%u PFAIL=%u\r\n",
+           (unsigned long)HAL_GetTick(),
+           status3,
+           (status3 & NAND_FLASH_STATUS3_BUSY) ? 1U : 0U,
+           (status3 & NAND_FLASH_STATUS3_WEL) ? 1U : 0U,
+           (status3 & NAND_FLASH_STATUS3_EFAIL) ? 1U : 0U,
+           (status3 & NAND_FLASH_STATUS3_PFAIL) ? 1U : 0U);
+
+    HAL_Delay(1U);
+  } while ((status3 & NAND_FLASH_STATUS3_BUSY) != 0U);
+
+  printf("erase block 0 finished\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    NADN_FLASH_READ_STATUS(&nand_base);
+    HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (ringbuf_read(&ring_buff, &bytschar, 1)) {
-      // printf("%c", bytschar);
-      parser_input(&parser, bytschar);
-    }
     // scanf("%s", buff);
     // printf("Hello Worl .%s r\r\n", buff);
     // HAL_Delay(1000);
