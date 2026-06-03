@@ -133,39 +133,94 @@ int main(void)
 
   NAND_FLASH_ReadID(&nand_base);
 
-  printf("start erase block 0, watch BUSY bit\r\n");
-  if (NAND_FLASH_BeginEraseBlockByIndex(&nand_base, 0U) != HAL_OK)
+  uint32_t test_block = 0U;
+  uint8_t is_bad_block = 0U;
+  if (NAND_FLASH_IsBadBlockByIndex(&nand_base, test_block, &is_bad_block) != HAL_OK)
   {
     Error_Handler();
   }
 
-  uint8_t status3 = 0U;
-  do
+  printf("block %lu is %s\r\n",
+         (unsigned long)test_block,
+         is_bad_block ? "bad" : "good");
+
+  if (is_bad_block != 0U)
   {
-    if (NAND_FLASH_ReadStatusRegister(&nand_base, NAND_FLASH_STATUS_REG3_ADDR, &status3) != HAL_OK)
+    if (NAND_FLASH_FindGoodBlock(&nand_base, test_block + 1U, &test_block) != HAL_OK)
     {
       Error_Handler();
     }
 
-    printf("tick=%lu status3=0x%02X BUSY=%u WEL=%u EFAIL=%u PFAIL=%u\r\n",
-           (unsigned long)HAL_GetTick(),
-           status3,
-           (status3 & NAND_FLASH_STATUS3_BUSY) ? 1U : 0U,
-           (status3 & NAND_FLASH_STATUS3_WEL) ? 1U : 0U,
-           (status3 & NAND_FLASH_STATUS3_EFAIL) ? 1U : 0U,
-           (status3 & NAND_FLASH_STATUS3_PFAIL) ? 1U : 0U);
+    printf("use good block %lu instead\r\n", (unsigned long)test_block);
+  }
 
-    HAL_Delay(1U);
-  } while ((status3 & NAND_FLASH_STATUS3_BUSY) != 0U);
+  printf("start erase block %lu\r\n", (unsigned long)test_block);
+  if (NAND_FLASH_EraseBlockByIndex(&nand_base, test_block) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
-  printf("erase block 0 finished\r\n");
+  printf("erase block %lu finished\r\n", (unsigned long)test_block);
+  static uint8_t write_buff[2048] = {0};
+  for (uint16_t i = 0; i < 2048; i++) {
+      write_buff[i] = i % 255;
+  }
+
+  uint32_t test_page = (test_block * NAND_FLASH_PAGES_PER_BLOCK) + 1U;
+
+  printf("start write page %lu\r\n", (unsigned long)test_page);
+  if (NAND_FLASH_ProgramPage(&nand_base, test_page, write_buff, 2048) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  printf("write page %lu finished\r\n", (unsigned long)test_page);
+
+  static uint8_t read_buff[2048] = {0};
+
+  printf("start read page %lu\r\n", (unsigned long)test_page);
+  if (NAND_FLASH_ReadPage(&nand_base, test_page, read_buff, 2048) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  uint32_t count1 = 0;
+  for (uint32_t j = 0; j < 2048 ; j++) {
+    if (write_buff[j] == read_buff[j]) {
+      count1++;
+    }
+  }
+  printf("read block 0 finished\r\n");
+  printf("count =  %u \r\n", count1);
+
+  NAND_FLASH_EraseBlockByIndex(&nand_base, 0);
+
+  if (NAND_FLASH_ReadPage(&nand_base, test_page, read_buff, 2048) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  count1 = 0;
+  for (uint32_t j = 0; j < 2048 ; j++) {
+    if (write_buff[j] == read_buff[j]) {
+      // printf("")
+      count1++;
+    }
+  }
+  printf("count =  %u \r\n", count1);
+  printf("count =  %u \r\n", read_buff[0]);
+
+  NAND_FLASH_ProgramPage(&nand_base, test_page, write_buff, 2048);
+
+  NAND_FLASH_ReadPage(&nand_base, test_page, read_buff, 2048);
+  printf("count =  %u \r\n", read_buff[1]);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    NADN_FLASH_READ_STATUS(&nand_base);
+    // NADN_FLASH_READ_STATUS(&nand_base);
     HAL_Delay(10);
     /* USER CODE END WHILE */
 

@@ -63,6 +63,8 @@ HAL_StatusTypeDef NAND_FLASH_ReleasePowerDown(nand_spi_base_t *nand_base);
 HAL_StatusTypeDef NAND_FLASH_ReadPageToBuffer(nand_spi_base_t *nand_base, uint32_t page_addr);
 HAL_StatusTypeDef NAND_FLASH_ReadBuffer(nand_spi_base_t *nand_base, uint16_t column_addr, uint8_t *buffer, uint16_t length);
 HAL_StatusTypeDef NAND_FLASH_ReadPage(nand_spi_base_t *nand_base, uint32_t page_addr, uint8_t *buffer, uint16_t length);
+HAL_StatusTypeDef NAND_FLASH_IsBadBlockByIndex(nand_spi_base_t *nand_base, uint32_t block_index, uint8_t *is_bad);
+HAL_StatusTypeDef NAND_FLASH_FindGoodBlock(nand_spi_base_t *nand_base, uint32_t start_block, uint32_t *good_block);
 HAL_StatusTypeDef NAND_FLASH_LoadProgramData(nand_spi_base_t *nand_base, uint16_t column_addr, const uint8_t *buffer, uint16_t length);
 HAL_StatusTypeDef NAND_FLASH_ProgramExecute(nand_spi_base_t *nand_base, uint32_t page_addr);
 HAL_StatusTypeDef NAND_FLASH_ProgramPage(nand_spi_base_t *nand_base, uint32_t page_addr, const uint8_t *buffer, uint16_t length);

@@ -21,6 +21,8 @@
 #define NAND_FLASH_CMD_RELEASE_POWER_DOWN    0xABU
 
 #define NAND_FLASH_SR1_BP_TB_MASK            0x7CU
+#define NAND_FLASH_BAD_BLOCK_MARKER_VALUE    0xFFU
+#define NAND_FLASH_BAD_BLOCK_SPARE_COLUMN    NAND_FLASH_PAGE_SIZE
 
 #define REG_PROTECTION      0xA0
 #define REG_CONFIG          0xB0
@@ -317,6 +319,7 @@ HAL_StatusTypeDef NAND_FLASH_WaitReady(nand_spi_base_t *nand_base, uint32_t time
         if (result != HAL_OK) {
             return result;
         }
+        printf("waite busy\r\n");
 
         if ((status & NAND_FLASH_STATUS3_BUSY) == 0U) {
             return HAL_OK;
@@ -385,6 +388,69 @@ HAL_StatusTypeDef NAND_FLASH_ReadPage(nand_spi_base_t *nand_base, uint32_t page_
     return NAND_FLASH_ReadBuffer(nand_base, 0U, buffer, length);
 }
 
+HAL_StatusTypeDef NAND_FLASH_IsBadBlockByIndex(nand_spi_base_t *nand_base, uint32_t block_index, uint8_t *is_bad)
+{
+    uint32_t first_page;
+    uint8_t marker[3] = {0U, 0U, 0U};
+    HAL_StatusTypeDef status;
+
+    if (!nand_is_valid(nand_base) || is_bad == NULL || (block_index >= NAND_FLASH_BLOCK_COUNT)) {
+        return HAL_ERROR;
+    }
+
+    first_page = block_index * NAND_FLASH_PAGES_PER_BLOCK;
+
+    status = NAND_FLASH_ReadPageToBuffer(nand_base, first_page);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    status = NAND_FLASH_WaitReady(nand_base, HAL_MAX_DELAY);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    status = NAND_FLASH_ReadBuffer(nand_base, 0U, marker, 2U);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    status = NAND_FLASH_ReadBuffer(nand_base, NAND_FLASH_BAD_BLOCK_SPARE_COLUMN, &marker[2], 1U);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    *is_bad = (marker[0] != NAND_FLASH_BAD_BLOCK_MARKER_VALUE) ||
+              (marker[1] != NAND_FLASH_BAD_BLOCK_MARKER_VALUE) ||
+              (marker[2] != NAND_FLASH_BAD_BLOCK_MARKER_VALUE);
+
+    return HAL_OK;
+}
+
+HAL_StatusTypeDef NAND_FLASH_FindGoodBlock(nand_spi_base_t *nand_base, uint32_t start_block, uint32_t *good_block)
+{
+    uint8_t is_bad = 0U;
+    HAL_StatusTypeDef status;
+
+    if (!nand_is_valid(nand_base) || good_block == NULL || (start_block >= NAND_FLASH_BLOCK_COUNT)) {
+        return HAL_ERROR;
+    }
+
+    for (uint32_t block = start_block; block < NAND_FLASH_BLOCK_COUNT; block++) {
+        status = NAND_FLASH_IsBadBlockByIndex(nand_base, block, &is_bad);
+        if (status != HAL_OK) {
+            return status;
+        }
+
+        if (is_bad == 0U) {
+            *good_block = block;
+            return HAL_OK;
+        }
+    }
+
+    return HAL_ERROR;
+}
+
 HAL_StatusTypeDef NAND_FLASH_LoadProgramData(nand_spi_base_t *nand_base, uint16_t column_addr, const uint8_t *buffer, uint16_t length)
 {
     uint8_t header[3] = {
@@ -421,6 +487,10 @@ HAL_StatusTypeDef NAND_FLASH_ProgramPage(nand_spi_base_t *nand_base, uint32_t pa
     HAL_StatusTypeDef status;
 
     if (!nand_is_valid(nand_base) || (buffer == NULL && length != 0U)) {
+        return HAL_ERROR;
+    }
+
+    if (page_addr >= NAND_FLASH_PAGE_COUNT) {
         return HAL_ERROR;
     }
 
